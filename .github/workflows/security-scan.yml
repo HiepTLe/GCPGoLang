@@ -1,4 +1,4 @@
-name: GCPGoLang Security Suite
+name: GCP Security Scan
 
 on:
   push:
@@ -132,9 +132,43 @@ jobs:
           name: terraform-validation-reports
           path: ./examples/terraform/plans/*-report.json
 
+  misconfig-scan:
+    name: Run Misconfiguration Scanner
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: Build GCPGoLang
+        run: go build -v -o gcpgolang
+
+      - name: Run Misconfig Scanner
+        run: |
+          ./gcpgolang misconfig-scanner --project=${{ secrets.GCP_PROJECT_ID }} --report-format=json --output=misconfig-report.json
+        
+      - name: Upload Misconfig Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: misconfig-scan-report
+          path: misconfig-report.json
+
   security-report:
     name: Generate Security Report
-    needs: [iam-analyze, service-account-audit, terraform-validate]
+    needs: [iam-analyze, service-account-audit, terraform-validate, misconfig-scan]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -156,6 +190,11 @@ jobs:
           name: terraform-validation-reports
           path: terraform-reports
           
+      - name: Download Misconfig Reports
+        uses: actions/download-artifact@v4
+        with:
+          name: misconfig-scan-report
+          
       - name: Generate Consolidated Report
         run: |
           echo "# GCPGoLang Security Scan Results" > security-report.md
@@ -176,6 +215,9 @@ jobs:
               jq -r '.violations[] | "- " + .severity + ": " + .message' "$report" >> security-report.md
             fi
           done
+          
+          echo "## Misconfiguration Analysis" >> security-report.md
+          jq -r '.misconfigurations[] | "- " + .severity + ": " + .issue + " in " + .resource_name' misconfig-report.json >> security-report.md
           
       - name: Upload Consolidated Report
         uses: actions/upload-artifact@v4
