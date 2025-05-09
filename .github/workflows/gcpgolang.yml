@@ -1,0 +1,198 @@
+name: GCPGoLang Security Suite
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sundays at midnight
+
+permissions:
+  contents: read
+  id-token: write  # For GCP workload identity federation
+  security-events: write  # For uploading security results
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Build
+        run: go build -v -o gcpgolang
+      
+      - name: Test
+        run: go test -v ./...
+
+  iam-analyze:
+    name: Analyze IAM Policies
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: Build GCPGoLang
+        run: go build -v -o gcpgolang
+
+      - name: Run IAM Analysis
+        run: |
+          ./gcpgolang iam-analyzer --project=${{ secrets.GCP_PROJECT_ID }} --report-format=json --output=iam-report.json
+        
+      - name: Upload IAM Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: iam-analysis-report
+          path: iam-report.json
+
+  service-account-audit:
+    name: Audit Service Accounts
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: Build GCPGoLang
+        run: go build -v -o gcpgolang
+
+      - name: Run Service Account Audit
+        run: |
+          ./gcpgolang sa-tracker --project=${{ secrets.GCP_PROJECT_ID }} --days=30 --report-format=json --output=sa-report.json
+        
+      - name: Upload Service Account Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: service-account-report
+          path: sa-report.json
+
+  terraform-validate:
+    name: Validate Terraform Plans
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Build GCPGoLang
+        run: go build -v -o gcpgolang
+
+      - name: Validate Example Terraform Plans
+        run: |
+          for plan in ./examples/terraform/plans/*.json; do
+            if [ -f "$plan" ]; then
+              echo "Validating plan: $plan"
+              ./gcpgolang tf-validator --plan=$plan --report-format=json --output="${plan%.json}-report.json"
+            fi
+          done
+        
+      - name: Upload Terraform Validation Reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: terraform-validation-reports
+          path: ./examples/terraform/plans/*-report.json
+
+  security-report:
+    name: Generate Security Report
+    needs: [iam-analyze, service-account-audit, terraform-validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Download IAM Reports
+        uses: actions/download-artifact@v3
+        with:
+          name: iam-analysis-report
+          
+      - name: Download Service Account Reports
+        uses: actions/download-artifact@v3
+        with:
+          name: service-account-report
+          
+      - name: Download Terraform Reports
+        uses: actions/download-artifact@v3
+        with:
+          name: terraform-validation-reports
+          path: terraform-reports
+          
+      - name: Generate Consolidated Report
+        run: |
+          echo "# GCPGoLang Security Scan Results" > security-report.md
+          echo "## Scan Date: $(date)" >> security-report.md
+          
+          echo "## IAM Analysis" >> security-report.md
+          jq -r '.issues[] | "- " + .severity + ": " + .description' iam-report.json >> security-report.md
+          
+          echo "## Service Account Analysis" >> security-report.md
+          jq -r '.service_accounts[] | select(.is_used==false) | "- Unused account: " + .email' sa-report.json >> security-report.md
+          jq -r '.service_accounts[] | select(.is_over_privileged==true) | "- Over-privileged: " + .email' sa-report.json >> security-report.md
+          
+          echo "## Terraform Validation" >> security-report.md
+          for report in terraform-reports/*-report.json; do
+            if [ -f "$report" ]; then
+              plan_name=$(basename "$report" | sed 's/-report.json//')
+              echo "### Plan: $plan_name" >> security-report.md
+              jq -r '.violations[] | "- " + .severity + ": " + .message' "$report" >> security-report.md
+            fi
+          done
+          
+      - name: Upload Consolidated Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-report
+          path: security-report.md
+          
+      - name: Add Report as PR Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('security-report.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            }); 

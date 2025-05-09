@@ -1,0 +1,58 @@
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/vendor/
+go.work
+
+# Binary output
+/bin/
+/gcpgolang
+/gcp-guardrail/bin/
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# IDE files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+.env
+
+# GCP specific
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.terraform/
+credentials.json
+application_default_credentials.json
+service-account-key.json
+
+# Project specific
+sa-report.json
+misconfig-report.json
+*-report.json
+*.log
+*.tmp
+*~
+
+# Build artifacts
+coverage.txt 

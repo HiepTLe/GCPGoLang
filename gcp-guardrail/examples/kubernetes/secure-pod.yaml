@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+  namespace: default
+  labels:
+    app: secure-app
+    environment: production
+    owner: security-team
+spec:
+  containers:
+  - name: secure-container
+    image: gcr.io/my-project/my-app:v1.0.0  # Using specific version tag
+    imagePullPolicy: Always
+    securityContext:
+      privileged: false
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      runAsUser: 1000
+      capabilities:
+        drop:
+          - ALL
+    resources:
+      limits:
+        memory: "256Mi"
+        cpu: "500m"
+      requests:
+        memory: "128Mi"
+        cpu: "250m"
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 15
+      periodSeconds: 20
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  automountServiceAccountToken: false
+  hostPID: false
+  hostIPC: false
+  hostNetwork: false 

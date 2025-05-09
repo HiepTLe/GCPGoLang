@@ -1,0 +1,90 @@
+{
+  "format_version": "1.1",
+  "terraform_version": "1.5.0",
+  "resource_changes": [
+    {
+      "address": "google_storage_bucket.compliant_bucket",
+      "mode": "managed",
+      "type": "google_storage_bucket",
+      "name": "compliant_bucket",
+      "provider_name": "registry.terraform.io/hashicorp/google",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "cors": [],
+          "default_event_based_hold": false,
+          "encryption": {
+            "default_kms_key_name": "projects/my-project/locations/global/keyRings/my-keyring/cryptoKeys/my-key"
+          },
+          "force_destroy": false,
+          "labels": {
+            "environment": "production"
+          },
+          "lifecycle_rule": [
+            {
+              "action": {
+                "type": "Delete"
+              },
+              "condition": {
+                "age": 365,
+                "created_before": null,
+                "with_state": null
+              }
+            }
+          ],
+          "location": "US",
+          "logging": {
+            "log_bucket": "my-log-bucket",
+            "log_object_prefix": "bucket-logs"
+          },
+          "name": "my-compliant-bucket",
+          "project": "my-project",
+          "public_access_prevention": "enforced",
+          "requester_pays": false,
+          "storage_class": "STANDARD",
+          "uniform_bucket_level_access": true,
+          "versioning": {
+            "enabled": true
+          },
+          "website": []
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "google_storage_bucket.non_compliant_bucket",
+      "mode": "managed",
+      "type": "google_storage_bucket",
+      "name": "non_compliant_bucket",
+      "provider_name": "registry.terraform.io/hashicorp/google",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "cors": [],
+          "default_event_based_hold": false,
+          "encryption": null,
+          "force_destroy": false,
+          "labels": {},
+          "lifecycle_rule": [],
+          "location": "US",
+          "logging": null,
+          "name": "my-non-compliant-bucket",
+          "project": "my-project",
+          "public_access_prevention": null,
+          "requester_pays": false,
+          "storage_class": "STANDARD",
+          "uniform_bucket_level_access": false,
+          "versioning": null,
+          "website": []
+        },
+        "after_unknown": {}
+      }
+    }
+  ]
+} 

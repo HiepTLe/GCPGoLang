@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: insecure-pod
+  namespace: default
+  # Missing required labels
+spec:
+  containers:
+  - name: insecure-container
+    image: nginx:latest  # Using latest tag - policy violation
+    imagePullPolicy: Always
+    securityContext:
+      privileged: true  # Policy violation
+      allowPrivilegeEscalation: true  # Policy violation
+    # Missing resource limits - policy violation
+    # Missing liveness probe - policy violation
+    # Missing readiness probe - policy violation
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: host-path
+      mountPath: /host-data
+  volumes:
+  - name: host-path
+    hostPath:
+      path: /   # Policy violation - mounting sensitive host path
+      type: Directory
+  hostPID: true  # Policy violation
+  hostIPC: true  # Policy violation
+  hostNetwork: true  # Policy violation 
