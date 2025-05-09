@@ -7,6 +7,14 @@ A comprehensive cloud security governance toolkit for Google Cloud Platform usin
 - **Project Number:** 652769711122
 - **Project ID:** gcpgolang
 
+## Latest Updates
+
+- **Enhanced Terraform Validator**: Now provides detailed policy violation information with specific remediation guidance
+- **Improved GitHub Actions Workflows**: Updated to use the latest Action versions and improved security reporting
+- **Workload Identity Federation**: Robust authentication between GitHub Actions and GCP without service account keys
+- **Severity-Based Validation**: Configurable validation thresholds to distinguish between warnings and errors
+- **Dedicated Wiz Security Scanning**: Weekly comprehensive security scanning with customizable scan types and HTML reports
+
 ## Overview
 
 GCPGoLang Security Suite is a collection of tools designed to enhance security governance in Google Cloud Platform environments. The toolkit helps identify security risks, enforce policies, monitor for threats, and ensure compliance. It integrates with and extends the gcp-guardrail project, following Go best practices with a modular architecture.
@@ -71,10 +79,32 @@ Features:
 - Compliance checking against custom policies
 - Detection of insecure configurations
 - Integration with CI/CD pipelines
-- Detailed violation reporting
+- Detailed violation reporting with remediation guidance
+- Configurable severity thresholds for warnings vs. errors
 
 ```bash
+# Basic validation
 gcpgolang tf-validator --plan=path/to/terraform-plan.json
+
+# With severity filtering (1=Low to 5=Blocker)
+gcpgolang tf-validator --plan=path/to/terraform-plan.json --severity=2
+
+# With custom failure threshold (only fail on high severity)
+gcpgolang tf-validator --plan=path/to/terraform-plan.json --fail-threshold=4
+
+# With custom policy directory
+gcpgolang tf-validator --plan=path/to/terraform-plan.json --policy-dir=my-policies
+```
+
+Sample output:
+```
+Violation #1:
+  Severity:      High
+  Policy:        public_bucket_access
+  Resource Type: google_storage_bucket
+  Resource Name: my-non-compliant-bucket
+  Issue:         Storage bucket does not have uniform bucket-level access enabled
+  Remediation:   Set uniform_bucket_level_access = true in the bucket configuration
 ```
 
 ### 5. Misconfiguration Scanner
@@ -121,6 +151,7 @@ GCPGoLang integrates with GitHub Actions for continuous security monitoring of y
 - **Security Reports**: Generates detailed security reports as workflow artifacts
 - **PR Integration**: Adds security findings as comments on pull requests
 - **Audit History**: Maintains a record of security posture over time
+- **Dedicated Wiz Scanning**: Weekly deep security scans with rich HTML reports and notification capabilities
 
 ### Enterprise-Grade Authentication with Workload Identity Federation
 
@@ -164,9 +195,10 @@ For detailed instructions, see the [Workload Identity Federation README](terrafo
 
 If you prefer to set up Workload Identity Federation manually:
 
-1. Create a Workload Identity Pool:
+1. Create a Workload Identity Pool with a timestamp to avoid naming conflicts:
    ```bash
-   gcloud iam workload-identity-pools create "github-actions-pool" \
+   TIMESTAMP=$(date +%m%d%H%M)
+   gcloud iam workload-identity-pools create "github-pool-${TIMESTAMP}" \
      --project="YOUR_PROJECT_ID" \
      --location="global" \
      --display-name="GitHub Actions Pool"
@@ -174,13 +206,14 @@ If you prefer to set up Workload Identity Federation manually:
 
 2. Create a Workload Identity Provider:
    ```bash
-   gcloud iam workload-identity-pools providers create-oidc "github-provider" \
+   gcloud iam workload-identity-pools providers create-oidc "github-provider-${TIMESTAMP}" \
      --project="YOUR_PROJECT_ID" \
      --location="global" \
-     --workload-identity-pool="github-actions-pool" \
+     --workload-identity-pool="github-pool-${TIMESTAMP}" \
      --display-name="GitHub Actions Provider" \
      --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" \
-     --issuer-uri="https://token.actions.githubusercontent.com"
+     --issuer-uri="https://token.actions.githubusercontent.com" \
+     --attribute-condition="attribute.repository==\"YOUR_GITHUB_ORG/GCPGoLang\""
    ```
 
 3. Create a service account and grant it permissions:
@@ -200,10 +233,31 @@ If you prefer to set up Workload Identity Federation manually:
      "github-actions-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
      --project="YOUR_PROJECT_ID" \
      --role="roles/iam.workloadIdentityUser" \
-     --member="principalSet://iam.googleapis.com/projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/github-actions-pool/attribute.repository/YOUR_GITHUB_ORG/GCPGoLang"
+     --member="principalSet://iam.googleapis.com/projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool-${TIMESTAMP}/attribute.repository/YOUR_GITHUB_ORG/GCPGoLang"
    ```
 
 5. Add the required secrets to your GitHub repository as described above.
+
+### Troubleshooting WIF Setup
+
+If you encounter issues with Workload Identity Federation setup:
+
+1. Run the information retrieval script:
+   ```bash
+   ./scripts/get-wif-info.sh
+   ```
+
+2. If resources are not appearing properly, run the cleanup script:
+   ```bash
+   ./scripts/cleanup-wif.sh
+   ```
+
+3. Create a new setup with a unique timestamp:
+   ```bash
+   ./scripts/manual-setup.sh
+   ```
+
+For detailed documentation, see [Workload Identity Federation Setup](docs/wif-setup.md).
 
 ## Complete Workflow
 
@@ -241,10 +295,29 @@ GCPGoLang can integrate with the Wiz security platform to provide advanced vulne
 
 ### How It Works
 
-1. The Misconfiguration Scanner detects GCP configuration issues
+1. The Misconfiguration Scanner detects GCP resource configuration issues
 2. Wiz API integration fetches vulnerability data
 3. Results are combined into a unified security report
 4. Actionable recommendations are provided for both misconfigurations and vulnerabilities
+
+### Dedicated Wiz Security Scanning
+
+The project includes a dedicated GitHub Actions workflow for deeper Wiz security scanning:
+
+- **Scheduled Weekly Scans**: Automatically runs every Monday at 2 AM
+- **On-Demand Scanning**: Manually trigger scans via workflow dispatch
+- **Customizable Scan Types**:
+  - `full`: Complete scan of all resources and vulnerabilities
+  - `critical-only`: Focus on critical and high severity issues
+  - `compliance`: Validate against compliance frameworks (CIS, NIST, SOC2)
+- **Rich Reporting**: Generates both JSON data and formatted HTML reports
+- **Security Notifications**: Configurable notifications for critical findings
+
+To run a manual scan:
+1. Go to the Actions tab in your GitHub repository
+2. Select "Wiz Security Scan" workflow
+3. Click "Run workflow"
+4. Choose your scan type and run
 
 ### Setup
 
@@ -253,12 +326,12 @@ GCPGoLang can integrate with the Wiz security platform to provide advanced vulne
    - Create a new service account with appropriate permissions
    - Generate client credentials
 
-2. Run the scanner with Wiz integration:
-   ```bash
-   gcpgolang misconfig-scanner --project=your-project-id --wiz \
-     --wiz-client-id=YOUR_CLIENT_ID \
-     --wiz-client-secret=YOUR_CLIENT_SECRET
-   ```
+2. Add Wiz credentials to GitHub repository secrets:
+   - `WIZ_CLIENT_ID`: Your Wiz API client ID
+   - `WIZ_CLIENT_SECRET`: Your Wiz API client secret
+
+3. Optionally configure notification channels:
+   - `SECURITY_WEBHOOK_URL`: Webhook URL for security notifications (e.g., Slack, Teams, etc.)
 
 ## Getting Started
 
@@ -396,6 +469,9 @@ GCPGoLang/
 │   └── policies/            # Rego policy definitions
 ├── docs/                    # Documentation
 ├── scripts/                 # Utility scripts
+├── terraform/               # Terraform modules
+│   ├── project-setup/       # Project foundation setup
+│   └── github-actions/      # GitHub Actions authentication
 └── examples/                # Usage examples
     ├── terraform/           # Terraform examples
     │   ├── plans/           # Example Terraform plans

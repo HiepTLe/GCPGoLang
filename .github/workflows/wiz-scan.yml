@@ -1,0 +1,157 @@
+name: Wiz Security Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Every Monday at 2 AM
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of scan to run'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - critical-only
+          - compliance
+
+permissions:
+  contents: read
+  id-token: write  # For GCP workload identity federation
+  security-events: write  # For uploading security results
+
+jobs:
+  wiz-scan:
+    name: Run Wiz Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: Build GCPGoLang
+        run: go build -v -o gcpgolang
+
+      - name: Run Wiz Integration Scan
+        env:
+          WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+          WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+        run: |
+          if [ -z "$WIZ_CLIENT_ID" ] || [ -z "$WIZ_CLIENT_SECRET" ]; then
+            echo "Wiz credentials not configured. Please add WIZ_CLIENT_ID and WIZ_CLIENT_SECRET to repository secrets."
+            exit 1
+          fi
+          
+          SCAN_TYPE="${{ github.event.inputs.scan_type || 'full' }}"
+          SCAN_FLAGS=""
+          
+          case "$SCAN_TYPE" in
+            "critical-only")
+              SCAN_FLAGS="--severity=critical,high"
+              ;;
+            "compliance")
+              SCAN_FLAGS="--compliance-frameworks=CIS,NIST,SOC2"
+              ;;
+            *)
+              SCAN_FLAGS="--all-resources"
+              ;;
+          esac
+          
+          echo "Running Wiz scan with type: $SCAN_TYPE"
+          ./gcpgolang misconfig-scanner \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --wiz \
+            --wiz-client-id=${{ secrets.WIZ_CLIENT_ID }} \
+            --wiz-client-secret=${{ secrets.WIZ_CLIENT_SECRET }} \
+            $SCAN_FLAGS \
+            --report-format=json \
+            --output=wiz-report.json
+      
+      - name: Generate HTML Report
+        run: |
+          # Convert JSON to HTML report
+          echo "<html><head><title>Wiz Security Scan Report</title>" > wiz-report.html
+          echo "<style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1, h2, h3 { color: #333; }
+            .critical { background-color: #ffdddd; color: #990000; }
+            .high { background-color: #ffffcc; color: #cc6600; }
+            .medium { background-color: #e6f3ff; color: #0066cc; }
+            .low { background-color: #e6ffe6; color: #006600; }
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            tr:nth-child(even) { background-color: #f2f2f2; }
+            th { background-color: #4CAF50; color: white; }
+          </style></head><body>" >> wiz-report.html
+          
+          echo "<h1>Wiz Security Scan Report</h1>" >> wiz-report.html
+          echo "<p>Generated on: $(date)</p>" >> wiz-report.html
+          
+          # Summary section
+          echo "<h2>Summary</h2>" >> wiz-report.html
+          CRITICAL=$(jq '.misconfigurations[] | select(.severity=="Critical") | .severity' wiz-report.json | wc -l)
+          HIGH=$(jq '.misconfigurations[] | select(.severity=="High") | .severity' wiz-report.json | wc -l)
+          MEDIUM=$(jq '.misconfigurations[] | select(.severity=="Medium") | .severity' wiz-report.json | wc -l)
+          LOW=$(jq '.misconfigurations[] | select(.severity=="Low") | .severity' wiz-report.json | wc -l)
+          
+          echo "<p>Found:</p><ul>" >> wiz-report.html
+          echo "<li><strong>Critical</strong>: $CRITICAL issues</li>" >> wiz-report.html
+          echo "<li><strong>High</strong>: $HIGH issues</li>" >> wiz-report.html
+          echo "<li><strong>Medium</strong>: $MEDIUM issues</li>" >> wiz-report.html
+          echo "<li><strong>Low</strong>: $LOW issues</li>" >> wiz-report.html
+          echo "</ul>" >> wiz-report.html
+          
+          # Detailed findings
+          echo "<h2>Detailed Findings</h2>" >> wiz-report.html
+          echo "<table><tr>" >> wiz-report.html
+          echo "<th>Severity</th><th>Resource</th><th>Issue</th><th>Remediation</th></tr>" >> wiz-report.html
+          
+          jq -r '.misconfigurations[] | "<tr class=\"" + (.severity | ascii_downcase) + "\"><td>" + .severity + "</td><td>" + .resource_name + "</td><td>" + .issue + "</td><td>" + .remediation + "</td></tr>"' wiz-report.json >> wiz-report.html
+          
+          echo "</table></body></html>" >> wiz-report.html
+      
+      - name: Upload JSON Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiz-scan-report-json
+          path: wiz-report.json
+
+      - name: Upload HTML Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiz-scan-report-html
+          path: wiz-report.html
+          
+      - name: Check for Critical Findings
+        run: |
+          CRITICAL_COUNT=$(jq '.misconfigurations[] | select(.severity=="Critical") | .severity' wiz-report.json | wc -l)
+          if [ $CRITICAL_COUNT -gt 0 ]; then
+            echo "::warning::Found $CRITICAL_COUNT critical security issues!"
+            # Optional: Fail the workflow on critical findings
+            # echo "::error::Critical security issues found. Please review the report and address them immediately."
+            # exit 1
+          fi
+          
+      - name: Notify Security Team (if needed)
+        if: ${{ success() && github.event_name == 'schedule' }}
+        run: |
+          CRITICAL_COUNT=$(jq '.misconfigurations[] | select(.severity=="Critical") | .severity' wiz-report.json | wc -l)
+          HIGH_COUNT=$(jq '.misconfigurations[] | select(.severity=="High") | .severity' wiz-report.json | wc -l)
+          
+          if [ $CRITICAL_COUNT -gt 0 ] || [ $HIGH_COUNT -gt 3 ]; then
+            echo "Would send security notification here"
+            # In a real implementation, this would call a webhook, send an email, etc.
+            # curl -X POST -H "Content-Type: application/json" -d '{"text":"Critical security issues found in Wiz scan"}' ${{ secrets.SECURITY_WEBHOOK_URL }}
+          fi 
