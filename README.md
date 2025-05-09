@@ -324,6 +324,27 @@ The workflow enforces:
 # Go to Actions → Terraform Infrastructure Management → Run workflow
 ```
 
+### GitHub Actions Authentication Setup
+
+Before using the CI/CD pipeline, you need to set up authentication between GitHub Actions and GCP using Workload Identity Federation:
+
+```bash
+# Run the setup script with default values
+./scripts/setup-github-auth.sh
+
+# Or customize the setup
+./scripts/setup-github-auth.sh --project-id=your-project-id --github-org=your-github-username
+```
+
+The script will output the values needed for GitHub repository secrets:
+- `WIF_PROVIDER` - Workload Identity Provider resource name
+- `SERVICE_ACCOUNT` - Service account email
+- `GCP_PROJECT_ID` - Your GCP project ID
+
+Add these secrets in your GitHub repository under Settings → Secrets and variables → Actions.
+
+For detailed instructions, see [GitHub Secrets Setup](docs/github-secrets-setup.md).
+
 ### Project Infrastructure Setup
 
 The `terraform/project-setup` module handles the core infrastructure setup:
