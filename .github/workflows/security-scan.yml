@@ -1,12 +1,15 @@
-name: GCP Security Scan
+name: GCP Security Scan (DEPRECATED)
+
+# DEPRECATED: This workflow is deprecated in favor of the unified-security.yml workflow.
+# It is kept for reference purposes only and now only runs on manual dispatch.
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  schedule:
-    - cron: '0 0 * * 0'  # Weekly on Sundays at midnight
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual run'
+        required: true
+        default: 'Testing'
 
 permissions:
   contents: read

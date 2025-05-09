@@ -143,7 +143,7 @@ jobs:
         run: |
           for plan in examples/terraform/plans/*.json; do
             plan_name=$(basename "$plan" .json)
-            ./gcpgolang tf-validator --plan="$plan" --policy-dir=examples/terraform/policies --report-format=json --output="terraform-reports/${plan_name}-report.json"
+            ./gcpgolang tf-validator --plan="$plan" --policy-dir=examples/terraform/policies --output="terraform-reports/${plan_name}-report.json"
           done
 
       - name: Upload Terraform Validation Reports
