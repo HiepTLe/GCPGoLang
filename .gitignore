@@ -55,4 +55,20 @@ misconfig-report.json
 *~
 
 # Build artifacts
-coverage.txt 
+coverage.txt
+
+# Terraform specific
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfplan
+tfplan.txt
+tf-outputs.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+backend.tf 

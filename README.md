@@ -304,6 +304,26 @@ Run the main application to see available commands:
 
 GCPGoLang provides Terraform modules to automate the setup and configuration of your Google Cloud environment following security best practices.
 
+### CI/CD for Infrastructure
+
+All Terraform changes should be made through the GitHub Actions CI/CD pipeline:
+
+1. **Make infrastructure changes** in the Terraform code
+2. **Create a pull request** to propose the changes
+3. **Review the Terraform plan** automatically added as a comment to your PR
+4. **Merge the PR** to apply changes to the GCP environment
+
+The workflow enforces:
+- Consistent formatting and validation
+- Pre-deployment planning and review
+- Secure credential management
+- Audit trail of all infrastructure changes
+
+```bash
+# To trigger an infrastructure deployment manually
+# Go to Actions → Terraform Infrastructure Management → Run workflow
+```
+
 ### Project Infrastructure Setup
 
 The `terraform/project-setup` module handles the core infrastructure setup:
