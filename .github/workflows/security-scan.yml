@@ -51,8 +51,7 @@ jobs:
         id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Build GCPGoLang
         run: go build -v -o gcpgolang
@@ -85,8 +84,7 @@ jobs:
         id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Build GCPGoLang
         run: go build -v -o gcpgolang
@@ -122,7 +120,7 @@ jobs:
           for plan in ./examples/terraform/plans/*.json; do
             if [ -f "$plan" ]; then
               echo "Validating plan: $plan"
-              ./gcpgolang tf-validator --plan=$plan --report-format=json --output="${plan%.json}-report.json"
+              ./gcpgolang tf-validator --plan=$plan --output="${plan%.json}-report.json"
             fi
           done
         
@@ -150,8 +148,7 @@ jobs:
         id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Build GCPGoLang
         run: go build -v -o gcpgolang
