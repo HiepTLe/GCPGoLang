@@ -465,6 +465,21 @@ jobs:
           name: unified-security-report
           path: security-report.md
           
+      - name: Display Report in Workflow Summary
+        run: |
+          echo "## GCPGoLang Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "$(cat security-report.md)" >> $GITHUB_STEP_SUMMARY
+          echo "### [Download Full Report](../artifacts/unified-security-report)" >> $GITHUB_STEP_SUMMARY
+          
+          # Also display in job logs for immediate visibility
+          echo "=========================="
+          echo "SECURITY SCAN RESULTS SUMMARY"
+          echo "=========================="
+          echo ""
+          cat security-report.md
+          echo ""
+          echo "=========================="
+          
       - name: Add Report as PR Comment
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v6
