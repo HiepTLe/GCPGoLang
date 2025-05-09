@@ -10,33 +10,68 @@ This guide explains how to integrate GCPGoLang with GitHub Actions for continuou
 4. **Documentation**: Maintain a history of security posture over time
 5. **Visibility**: Make security findings visible to all developers, not just security teams
 
+## Available Workflows
+
+GCPGoLang provides several GitHub Actions workflows for different security scanning needs:
+
+1. **unified-security.yml**: Combined workflow with tiered scanning approach:
+   - Core security checks run on all PRs/pushes
+   - Medium-level checks run on main branch pushes
+   - Deep checks (including Wiz) run on schedule and main branch commits
+
+2. **security-scan.yml**: Core security analysis without Wiz integration
+3. **wiz-scan.yml**: Dedicated Wiz scanning workflow with HTML reporting
+4. **terraform.yml**: Infrastructure validation with plan review
+5. **gcpgolang.yml**: General validation of the security toolkit itself
+
 ## Setup Process
 
 ### 1. Create the GitHub Actions Workflow
 
-Create the file `.github/workflows/gcpgolang.yml` in your repository with the content provided in the `examples` directory. This workflow will:
+Copy the desired workflow file from the `examples/workflows` directory to `.github/workflows/` in your repository. The unified workflow is recommended for most use cases:
 
-- Build the GCPGoLang tools
-- Run IAM policy analysis
-- Audit service account usage
-- Validate Terraform plans against security policies
-- Generate a consolidated security report
+```bash
+mkdir -p .github/workflows
+cp examples/workflows/unified-security.yml .github/workflows/
+```
 
 ### 2. Set Up GCP Authentication
 
-GCPGoLang uses GCP Workload Identity Federation for secure authentication from GitHub Actions. To set this up:
+GCPGoLang uses GCP Workload Identity Federation for secure authentication from GitHub Actions. You have three options to set this up:
 
-1. Run the setup script:
-   ```bash
-   ./scripts/setup-github-actions.sh YOUR_GCP_PROJECT_ID
-   ```
+#### Option 1: Using Terraform (Recommended)
 
-2. Add the provided secrets to your GitHub repository:
-   - `GCP_PROJECT_ID`
-   - `WIF_PROVIDER`
-   - `SERVICE_ACCOUNT`
+```bash
+cd terraform/github-actions
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your project details
+terraform init
+terraform apply
+```
 
-Alternatively, follow the manual setup instructions in the `examples/README.md` file.
+#### Option 2: Using the Setup Script
+
+```bash
+./scripts/setup-github-auth.sh
+```
+
+Or with custom parameters:
+```bash
+./scripts/setup-github-auth.sh --project-id=your-project-id --github-org=your-github-username
+```
+
+#### Option 3: Manual Setup with Timestamp-Based Resources
+
+```bash
+./scripts/manual-setup.sh
+```
+
+After any of these methods, add the provided secrets to your GitHub repository:
+- `GCP_PROJECT_ID`
+- `WIF_PROVIDER`
+- `SERVICE_ACCOUNT`
+
+For detailed setup instructions, see [GitHub Secrets Setup](github-secrets-setup.md).
 
 ## Rego Policy Requirements
 
@@ -53,6 +88,7 @@ policies/
 ├── storage/          # Cloud Storage policies
 ├── network/          # VPC and networking policies
 ├── kubernetes/       # GKE policies
+├── vertex-ai/        # AI/ML security policies
 └── terraform/        # Terraform-specific policies
 ```
 
@@ -209,7 +245,8 @@ To add Slack notifications for security findings:
 
 If you encounter authentication errors:
 - Verify the service account has the necessary permissions
-- Check that the Workload Identity Federation is set up correctly
+- Check that the Workload Identity Federation is set up correctly using `./scripts/get-wif-info.sh`
+- Try cleaning up and recreating WIF resources with `./scripts/cleanup-wif.sh` followed by setup
 - Ensure all GitHub secrets are properly set
 
 ### Policy Evaluation Failures

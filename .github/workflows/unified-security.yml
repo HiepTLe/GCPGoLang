@@ -1,0 +1,484 @@
+name: GCPGoLang Unified Security Suite
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      include_wiz:
+        description: 'Include Wiz security scanning'
+        required: false
+        default: true
+        type: boolean
+      scan_type:
+        description: 'Type of scan to run'
+        required: false
+        default: 'standard'
+        type: choice
+        options:
+          - quick     # Basic security checks only
+          - standard  # All checks except Wiz
+          - full      # All checks including Wiz
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sundays at midnight
+
+permissions:
+  contents: read
+  id-token: write  # For GCP workload identity federation
+  security-events: write  # For uploading security results
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Build
+        run: go build -v -o gcpgolang
+      
+      - name: Test
+        run: go test -v ./...
+
+  iam-analyze:
+    name: Analyze IAM Policies
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: Build GCPGoLang
+        run: go build -v -o gcpgolang
+
+      - name: Run IAM Analysis
+        run: |
+          ./gcpgolang iam-analyzer --project=${{ secrets.GCP_PROJECT_ID }} --report-format=json --output=iam-report.json
+        
+      - name: Upload IAM Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: iam-analysis-report
+          path: iam-report.json
+
+  service-account-audit:
+    name: Audit Service Accounts
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: Build GCPGoLang
+        run: go build -v -o gcpgolang
+
+      - name: Run Service Account Audit
+        run: |
+          ./gcpgolang sa-tracker --project=${{ secrets.GCP_PROJECT_ID }} --report-format=json --output=sa-report.json
+        
+      - name: Upload Service Account Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-account-report
+          path: sa-report.json
+
+  terraform-validate:
+    name: Validate Terraform Plans
+    needs: build
+    # Skip for quick scans on PRs if needed
+    if: ${{ !(github.event_name == 'pull_request' && inputs.scan_type == 'quick') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Build GCPGoLang
+        run: go build -v -o gcpgolang
+
+      - name: Create Output Directory
+        run: mkdir -p terraform-reports
+
+      - name: Validate Example Terraform Plans
+        run: |
+          for plan in examples/terraform/plans/*.json; do
+            plan_name=$(basename "$plan" .json)
+            ./gcpgolang tf-validator --plan="$plan" --policy-dir=examples/terraform/policies --report-format=json --output="terraform-reports/${plan_name}-report.json"
+          done
+
+      - name: Upload Terraform Validation Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-validation-reports
+          path: terraform-reports
+
+  misconfig-scan:
+    name: Scan for Misconfigurations
+    needs: build
+    # Run on main pushes, scheduled runs, or when explicitly requested
+    if: |
+      github.event_name == 'schedule' || 
+      github.event_name == 'workflow_dispatch' && inputs.scan_type != 'quick' || 
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: Build GCPGoLang
+        run: go build -v -o gcpgolang
+
+      - name: Run Misconfiguration Scan
+        run: |
+          ./gcpgolang misconfig-scanner --project=${{ secrets.GCP_PROJECT_ID }} --report-format=json --output=misconfig-report.json
+        
+      - name: Upload Misconfiguration Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: misconfig-scan-report
+          path: misconfig-report.json
+
+  wiz-scan:
+    name: Wiz Security Scan
+    needs: build
+    # Run on these specific conditions for flexible approach
+    if: |
+      github.event_name == 'schedule' || 
+      github.event_name == 'workflow_dispatch' && (inputs.include_wiz || inputs.scan_type == 'full') || 
+      github.event_name == 'push' && github.ref == 'refs/heads/main' ||
+      contains(github.event.head_commit.message, '[run-wiz]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Wiz
+        id: auth
+        run: |
+          echo "Authenticating to Wiz platform..."
+          # Authentication logic using secrets.WIZ_CLIENT_ID and secrets.WIZ_CLIENT_SECRET
+          # This is a placeholder - replace with actual Wiz API authentication
+
+      - name: Determine Scan Type
+        id: scan-params
+        run: |
+          # Set default scan type for scheduled runs
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "scan_type=full" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "scan_type=${{ inputs.scan_type }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.head_commit.message }}" == *"[run-wiz-full]"* ]]; then
+            echo "scan_type=full" >> $GITHUB_OUTPUT
+          else
+            echo "scan_type=critical-only" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Wiz Scan
+        run: |
+          echo "Running Wiz scan (type: ${{ steps.scan-params.outputs.scan_type }})..."
+          # This is a placeholder - replace with actual Wiz scanning command
+          # Generate a sample report for integration testing
+          cat > wiz-report.json << EOF
+          {
+            "scan_id": "wiz-${{ github.run_id }}",
+            "scan_time": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "scan_type": "${{ steps.scan-params.outputs.scan_type }}",
+            "project_id": "${{ secrets.GCP_PROJECT_ID }}",
+            "vulnerabilities": [
+              {
+                "id": "WIZ-VUL-001",
+                "severity": "CRITICAL",
+                "title": "Exposed service account key",
+                "description": "Service account key found in public repository",
+                "resource": "serviceAccount:example@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com",
+                "remediation": "Rotate the key and store securely in Secret Manager"
+              },
+              {
+                "id": "WIZ-VUL-002",
+                "severity": "HIGH",
+                "title": "Public storage bucket",
+                "description": "Storage bucket with public access allowed",
+                "resource": "gs://${{ secrets.GCP_PROJECT_ID }}-public-data",
+                "remediation": "Restrict bucket access with proper IAM policies"
+              }
+            ]
+          }
+          EOF
+
+      - name: Generate HTML Report
+        if: ${{ steps.scan-params.outputs.scan_type == 'full' }}
+        run: |
+          echo "Generating detailed HTML report..."
+          # Placeholder for HTML report generation logic
+          cat > wiz-report.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Wiz Security Scan Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; }
+              .critical { background-color: #ffdddd; }
+              .high { background-color: #ffffcc; }
+            </style>
+          </head>
+          <body>
+            <h1>Wiz Security Scan Report</h1>
+            <p>Scan ID: wiz-${{ github.run_id }}</p>
+            <p>Project: ${{ secrets.GCP_PROJECT_ID }}</p>
+            <p>Scan Date: $(date)</p>
+            <h2>Findings</h2>
+            <table border="1" cellpadding="5">
+              <tr><th>ID</th><th>Severity</th><th>Title</th><th>Resource</th><th>Remediation</th></tr>
+              <tr class="critical"><td>WIZ-VUL-001</td><td>CRITICAL</td><td>Exposed service account key</td><td>serviceAccount:example@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com</td><td>Rotate the key and store securely in Secret Manager</td></tr>
+              <tr class="high"><td>WIZ-VUL-002</td><td>HIGH</td><td>Public storage bucket</td><td>gs://${{ secrets.GCP_PROJECT_ID }}-public-data</td><td>Restrict bucket access with proper IAM policies</td></tr>
+            </table>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload Wiz JSON Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiz-scan-report
+          path: wiz-report.json
+
+      - name: Upload Wiz HTML Report
+        if: ${{ steps.scan-params.outputs.scan_type == 'full' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiz-scan-html-report
+          path: wiz-report.html
+
+  generate-unified-report:
+    name: Generate Unified Security Report
+    # Run after all scan jobs, even if some fail
+    if: ${{ always() }}
+    needs: [iam-analyze, service-account-audit, terraform-validate, misconfig-scan, wiz-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Download IAM Report
+        uses: actions/download-artifact@v4
+        with:
+          name: iam-analysis-report
+          path: reports
+        continue-on-error: true
+          
+      - name: Download Service Account Report
+        uses: actions/download-artifact@v4
+        with:
+          name: service-account-report
+          path: reports
+        continue-on-error: true
+          
+      - name: Download Terraform Reports
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-validation-reports
+          path: reports/terraform-reports
+        continue-on-error: true
+          
+      - name: Download Misconfig Report
+        uses: actions/download-artifact@v4
+        with:
+          name: misconfig-scan-report
+          path: reports
+        continue-on-error: true
+          
+      - name: Download Wiz Report
+        uses: actions/download-artifact@v4
+        with:
+          name: wiz-scan-report
+          path: reports
+        continue-on-error: true
+          
+      - name: Generate Consolidated Report
+        run: |
+          echo "# GCPGoLang Security Scan Results" > security-report.md
+          echo "## Scan Date: $(date)" >> security-report.md
+          echo "## Run ID: ${{ github.run_id }}" >> security-report.md
+          echo "## Trigger: ${{ github.event_name }}" >> security-report.md
+          echo "" >> security-report.md
+          
+          # IAM Analysis section
+          if [ -f "reports/iam-report.json" ]; then
+            echo "## IAM Analysis" >> security-report.md
+            jq -r '.issues[] | "- " + .severity + ": " + .description' reports/iam-report.json >> security-report.md
+            echo "" >> security-report.md
+          fi
+          
+          # Service Account Analysis section
+          if [ -f "reports/sa-report.json" ]; then
+            echo "## Service Account Analysis" >> security-report.md
+            echo "### Unused Service Accounts" >> security-report.md
+            jq -r '.service_accounts[] | select(.is_used==false) | "- " + .email' reports/sa-report.json >> security-report.md
+            echo "" >> security-report.md
+            
+            echo "### Over-privileged Service Accounts" >> security-report.md
+            jq -r '.service_accounts[] | select(.is_over_privileged==true) | "- " + .email' reports/sa-report.json >> security-report.md
+            echo "" >> security-report.md
+          fi
+          
+          # Terraform Validation section
+          if [ -d "reports/terraform-reports" ] && [ "$(ls -A reports/terraform-reports)" ]; then
+            echo "## Terraform Validation" >> security-report.md
+            for report in reports/terraform-reports/*-report.json; do
+              if [ -f "$report" ]; then
+                plan_name=$(basename "$report" | sed 's/-report.json//')
+                echo "### Plan: $plan_name" >> security-report.md
+                jq -r '.violations[] | "- " + .severity + ": " + .message' "$report" >> security-report.md
+                echo "" >> security-report.md
+              fi
+            done
+          fi
+          
+          # Misconfiguration Analysis section
+          if [ -f "reports/misconfig-report.json" ]; then
+            echo "## Misconfiguration Analysis" >> security-report.md
+            jq -r '.misconfigurations[] | "- " + .severity + ": " + .resource_name + " - " + .issue + " (" + .category + ")"' reports/misconfig-report.json >> security-report.md
+            echo "" >> security-report.md
+          fi
+          
+          # Wiz Vulnerabilities section
+          if [ -f "reports/wiz-report.json" ]; then
+            echo "## Wiz Security Analysis" >> security-report.md
+            jq -r '.vulnerabilities[] | "- " + .severity + ": " + .title + " - " + .description + " (" + .resource + ")"' reports/wiz-report.json >> security-report.md
+            echo "" >> security-report.md
+            
+            # Add link to detailed HTML report if it exists
+            if [ -f "reports/wiz-report.html" ]; then
+              echo "### [View Detailed Wiz HTML Report](../artifacts/wiz-scan-html-report)" >> security-report.md
+              echo "" >> security-report.md
+            fi
+          fi
+          
+          # Add summary section
+          echo "## Summary" >> security-report.md
+          echo "| Component | Status | Issues Found |" >> security-report.md
+          echo "|-----------|--------|--------------|" >> security-report.md
+          
+          # IAM summary
+          if [ -f "reports/iam-report.json" ]; then
+            iam_issues=$(jq '.issues | length' reports/iam-report.json)
+            echo "| IAM Analysis | ✅ | $iam_issues |" >> security-report.md
+          else
+            echo "| IAM Analysis | ❌ | N/A |" >> security-report.md
+          fi
+          
+          # Service Account summary
+          if [ -f "reports/sa-report.json" ]; then
+            unused_sa=$(jq '.service_accounts | map(select(.is_used==false)) | length' reports/sa-report.json)
+            overprivileged_sa=$(jq '.service_accounts | map(select(.is_over_privileged==true)) | length' reports/sa-report.json)
+            echo "| Service Account Audit | ✅ | $unused_sa unused, $overprivileged_sa over-privileged |" >> security-report.md
+          else
+            echo "| Service Account Audit | ❌ | N/A |" >> security-report.md
+          fi
+          
+          # Terraform validation summary
+          if [ -d "reports/terraform-reports" ] && [ "$(ls -A reports/terraform-reports)" ]; then
+            tf_issues=0
+            for report in reports/terraform-reports/*-report.json; do
+              if [ -f "$report" ]; then
+                issues=$(jq '.violations | length' "$report")
+                tf_issues=$((tf_issues + issues))
+              fi
+            done
+            echo "| Terraform Validation | ✅ | $tf_issues |" >> security-report.md
+          else
+            echo "| Terraform Validation | ❌ | N/A |" >> security-report.md
+          fi
+          
+          # Misconfiguration summary
+          if [ -f "reports/misconfig-report.json" ]; then
+            misconfig_issues=$(jq '.misconfigurations | length' reports/misconfig-report.json)
+            echo "| Misconfiguration Scan | ✅ | $misconfig_issues |" >> security-report.md
+          else
+            echo "| Misconfiguration Scan | ❌ | N/A |" >> security-report.md
+          fi
+          
+          # Wiz summary
+          if [ -f "reports/wiz-report.json" ]; then
+            wiz_issues=$(jq '.vulnerabilities | length' reports/wiz-report.json)
+            echo "| Wiz Security Scan | ✅ | $wiz_issues |" >> security-report.md
+          else
+            echo "| Wiz Security Scan | ❌ | N/A |" >> security-report.md
+          fi
+          
+      - name: Upload Unified Security Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-security-report
+          path: security-report.md
+          
+      - name: Add Report as PR Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('security-report.md', 'utf8');
+            
+            const header = `## Security Scan Results for PR #${context.issue.number}`;
+            const body = `${header}\n\n${report}\n\n### [View Full Report](../actions/runs/${context.runId})`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            }); 

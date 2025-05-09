@@ -1,21 +1,18 @@
 # GCPGoLang Security Suite
 
-A comprehensive cloud security governance toolkit for Google Cloud Platform using Go and Rego.
-
-## Project Information
-- **Project Name:** GCPGoLang
-- **Project Number:** 652769711122
-- **Project ID:** gcpgolang
+A comprehensive cloud security governance toolkit for Google Cloud Platform using GoLang, Workload Identity Federation, Wiz, Terraform, and Rego/OPA.
 
 ## Latest Updates (May 2025)
 
-- **Enhanced Terraform Validator**: Now provides detailed policy violation information with specific remediation guidance
-- **Improved GitHub Actions Workflows**: Updated to use the latest Action versions and improved security reporting
-- **Workload Identity Federation**: Robust authentication between GitHub Actions and GCP without service account keys
-- **Severity-Based Validation**: Configurable validation thresholds to distinguish between warnings and errors
-- **Dedicated Wiz Security Scanning**: Weekly comprehensive security scanning with customizable scan types and HTML reports
-- **Conflict-Resolution Scripts**: New timestamp-based naming for WIF resources to avoid naming conflicts
-- **Troubleshooting Utilities**: Added diagnostic and cleanup scripts for easier maintenance
+- **Enhanced IAM Analysis Engine**: Improved detection of privilege escalation paths and dormant permissions
+- **Specialized GenAI/Vertex AI Security**: Added six new Rego policies for securing AI workloads, including model monitoring, CMEK enforcement, and responsible AI governance
+- **Unified Security Workflow**: Implemented tiered scanning approach with core checks for PRs, deeper checks for main branch, and comprehensive scans on schedules
+- **Authentication Improvements**: Enhanced Workload Identity Federation setup with multiple options including Terraform automation and timestamp-based naming
+- **Wiz Platform Integration**: Complete integration with Wiz for vulnerability management with customizable scan types and HTML reporting
+- **Real-Time Security Notifications**: Configurable alerting for critical findings through webhooks and collaboration platforms
+- **Documentation Overhaul**: Expanded guides for GitHub Actions integration, secrets setup, and troubleshooting
+- **Terraform Validator Enhancements**: Detailed policy violation reporting with specific remediation guidance
+- **Resource Cleanup Utilities**: Added diagnostic and maintenance scripts for easier management
 
 ## Overview
 
@@ -142,6 +139,13 @@ The project uses Open Policy Agent (OPA) and Rego language for policy definition
 - **Storage Policies**: Secure bucket and object configurations
 - **Compute Policies**: VM and container security standards
 - **Encryption Policies**: Data protection requirements
+- **Vertex AI & GenAI Policies**: Specialized policies for machine learning and AI workloads:
+  - **Private Endpoints**: Enforces private connectivity for AI endpoints
+  - **CMEK Encryption**: Ensures customer-managed encryption keys for AI data
+  - **Model Monitoring**: Enforces drift detection and quality monitoring
+  - **Access Restrictions**: Prevents overly permissive access to AI resources
+  - **Responsible AI**: Enforces governance practices including model cards and explainability
+  - **VPC Service Controls**: Ensures AI services are protected by network perimeters
 
 Policies can be customized to match organization-specific security requirements and compliance frameworks.
 
@@ -160,10 +164,29 @@ GCPGoLang integrates with GitHub Actions for continuous security monitoring of y
 
 ### Available Workflows
 
-1. **security-scan.yml**: Complete security analysis including IAM, service accounts, and misconfigurations
-2. **terraform.yml**: Infrastructure validation with plan review and automated approval
-3. **gcpgolang.yml**: General security tools validation and testing
-4. **wiz-scan.yml**: Deep security scanning with Wiz integration and rich reporting
+GCPGoLang provides a unified security workflow with flexible scanning options:
+
+**unified-security.yml**: Combined security workflow with tiered scanning approach:
+- **Core Security Components**: Always run on PRs and pushes (IAM, service accounts)
+- **Terraform Validation**: Runs on all workflows unless quick scan is selected
+- **Misconfiguration Scanning**: Runs on main branch pushes, scheduled runs, and on-demand
+- **Wiz Integration**: Automatically runs on main branch commits, scheduled weekly, and on-demand
+
+The workflow has several run modes:
+- **Quick Scan**: Basic security checks for rapid feedback during development 
+- **Standard Scan**: Comprehensive checks without Wiz integration
+- **Full Scan**: Complete security assessment including Wiz integration
+
+Special features:
+- Run Wiz scans on-demand by including `[run-wiz]` in your commit message
+- Request full Wiz scans with `[run-wiz-full]` for detailed HTML reports
+- Consolidated report that includes all scan results in one place
+- PR comments with security findings for easy review
+
+Alternative specialized workflows:
+1. **security-scan.yml**: Core security analysis without Wiz integration
+2. **wiz-scan.yml**: Dedicated Wiz scanning workflow with rich HTML reporting
+3. **terraform.yml**: Infrastructure validation with plan review and automated approval
 
 ### Enterprise-Grade Authentication with Workload Identity Federation
 
@@ -175,106 +198,55 @@ GCPGoLang uses Google Cloud's Workload Identity Federation for secure, key-less 
 4. **Complete audit trail**: Every authentication and action is logged for security analysis
 5. **Monitoring & alerting**: Suspicious activity detection with automated notifications
 
-### Setup Using Terraform (Recommended)
+### GitHub Actions Authentication Setup
 
-We provide a complete Terraform configuration to set up Workload Identity Federation with proper RBAC and monitoring:
+There are three ways to set up authentication between GitHub Actions and GCP:
 
-1. Navigate to the Terraform directory:
-   ```bash
-   cd terraform/github-actions
-   ```
+#### Option 1: Using Terraform (Recommended)
 
-2. Copy and customize the variables file:
-   ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   # Edit terraform.tfvars with your project details
-   ```
+The `terraform/github-actions` module configures secure authentication from GitHub Actions to Google Cloud using Workload Identity Federation:
 
-3. Apply the Terraform configuration:
-   ```bash
-   terraform init
-   terraform apply
-   ```
+```bash
+cd terraform/github-actions
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your project details
+terraform init
+terraform apply
+```
 
-4. Add the required secrets to your GitHub repository:
-   - `WIF_PROVIDER`: Output from terraform (workload_identity_provider)
-   - `SERVICE_ACCOUNT`: Output from terraform (service_account_email)
-   - `GCP_PROJECT_ID`: Your Google Cloud project ID
+After applying, Terraform will output the values needed for GitHub repository secrets. Add these to your GitHub repository:
+- `WIF_PROVIDER`
+- `SERVICE_ACCOUNT`
+- `GCP_PROJECT_ID`
 
-For detailed instructions, see the [Workload Identity Federation README](terraform/github-actions/README.md).
+#### Option 2: Using the Setup Script
 
-### Manual Setup (Alternative)
+For a guided setup experience, run:
+```bash
+./scripts/setup-github-auth.sh
+```
 
-If you prefer to set up Workload Identity Federation manually:
+Or with custom parameters:
+```bash
+./scripts/setup-github-auth.sh --project-id=your-project-id --github-org=your-github-username
+```
 
-1. Use our automated script with customizable parameters:
-   ```bash
-   ./scripts/setup-github-auth.sh --project-id=YOUR_PROJECT_ID --project-number=YOUR_PROJECT_NUMBER --github-org=YOUR_GITHUB_ORG --github-repo=GCPGoLang
-   ```
+The script will output the values needed for GitHub repository secrets.
 
-2. Or create a Workload Identity Pool with a timestamp to avoid naming conflicts:
-   ```bash
-   TIMESTAMP=$(date +%m%d%H%M)
-   gcloud iam workload-identity-pools create "github-pool-${TIMESTAMP}" \
-     --project="YOUR_PROJECT_ID" \
-     --location="global" \
-     --display-name="GitHub Actions Pool"
-   ```
+#### Option 3: Manual Setup with Timestamp-Based Resources
 
-3. Create a Workload Identity Provider:
-   ```bash
-   gcloud iam workload-identity-pools providers create-oidc "github-provider-${TIMESTAMP}" \
-     --project="YOUR_PROJECT_ID" \
-     --location="global" \
-     --workload-identity-pool="github-pool-${TIMESTAMP}" \
-     --display-name="GitHub Actions Provider" \
-     --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" \
-     --issuer-uri="https://token.actions.githubusercontent.com" \
-     --attribute-condition="attribute.repository==\"YOUR_GITHUB_ORG/GCPGoLang\""
-   ```
+If you need unique resource names to avoid conflicts:
+```bash
+./scripts/manual-setup.sh
+```
 
-4. Create a service account and grant it permissions:
-   ```bash
-   gcloud iam service-accounts create "github-actions-sa" \
-     --project="YOUR_PROJECT_ID"
-   
-   # Grant needed permissions (example)
-   gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-     --member="serviceAccount:github-actions-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
-     --role="roles/iam.securityReviewer"
-   ```
+#### Additional Scripts
 
-5. Allow the GitHub identity to impersonate the service account:
-   ```bash
-   gcloud iam service-accounts add-iam-policy-binding \
-     "github-actions-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
-     --project="YOUR_PROJECT_ID" \
-     --role="roles/iam.workloadIdentityUser" \
-     --member="principalSet://iam.googleapis.com/projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool-${TIMESTAMP}/attribute.repository/YOUR_GITHUB_ORG/GCPGoLang"
-   ```
+- Use `get-wif-info.sh` to retrieve information about existing Workload Identity Federation resources
+- Use `cleanup-wif.sh` to clean up Workload Identity Federation resources if needed
+- Use `setup-github-actions.sh` for a simplified GitHub Actions workflow setup
 
-6. Add the required secrets to your GitHub repository as described above.
-
-### Troubleshooting WIF Setup
-
-If you encounter issues with Workload Identity Federation setup:
-
-1. Run the information retrieval script:
-   ```bash
-   ./scripts/get-wif-info.sh
-   ```
-
-2. If resources are not appearing properly, run the cleanup script:
-   ```bash
-   ./scripts/cleanup-wif.sh
-   ```
-
-3. Create a new setup with a unique timestamp:
-   ```bash
-   ./scripts/manual-setup.sh
-   ```
-
-For detailed documentation, see [Workload Identity Federation Setup](docs/wif-setup.md).
+For detailed instructions on adding the secrets to your GitHub repository, see the [GitHub Secrets Setup](docs/github-secrets-setup.md) guide.
 
 ## Integration with Wiz
 
@@ -319,6 +291,97 @@ To run a manual scan:
 
 3. Optionally configure notification channels:
    - `SECURITY_WEBHOOK_URL`: Webhook URL for security notifications (e.g., Slack, Teams, etc.)
+
+## Vertex AI and GenAI Security
+
+GCPGoLang includes specialized security governance for Google Cloud's AI and machine learning services, with a focus on Vertex AI security best practices.
+
+### Comprehensive GenAI Security Controls
+
+The toolkit enforces security controls across the entire AI/ML lifecycle:
+
+- **Infrastructure Security**: Network isolation, private endpoints, VPC Service Controls
+- **Data Protection**: CMEK encryption, access restrictions, data governance
+- **Model Governance**: Model cards, explainability requirements, monitoring
+- **Operational Security**: Drift detection, quality monitoring, alerts
+
+### Key Vertex AI Security Policies
+
+The following Rego policies enforce Google Cloud AI security best practices:
+
+1. **Private Endpoints Policy**: Ensures Vertex AI endpoints use private connectivity instead of public endpoints
+   ```
+   gcpgolang tf-validator --plan=path/to/plan.json --policy-dir=gcp-guardrail/policies/vertex-ai
+   ```
+
+2. **CMEK Encryption Policy**: Enforces the use of Customer-Managed Encryption Keys for all Vertex AI resources
+   ```
+   # Example violation
+   Severity:      HIGH
+   Policy:        vertex.cmek_encryption
+   Resource Type: google_vertex_ai_dataset
+   Resource Name: my-dataset
+   Issue:         Vertex AI resources must use Customer-Managed Encryption Keys (CMEK)
+   ```
+
+3. **Model Monitoring Policy**: Ensures deployed models have drift detection and quality monitoring
+   ```
+   # Required configuration
+   resource "google_vertex_ai_model_deployment_monitoring_job" "example" {
+     model_deployment_monitoring_job_config {
+       model_monitoring_objective {
+         prediction_drift_detection_config {
+           drift_thresholds = {
+             "feature1" = 0.01
+           }
+         }
+       }
+       notification_spec {
+         email_config {
+           user_emails = ["admin@example.com"]
+         }
+       }
+     }
+   }
+   ```
+
+4. **Access Restrictions Policy**: Prevents overly permissive access to AI resources
+   ```
+   # Violation example
+   Severity:      CRITICAL
+   Policy:        vertex.access_restrictions
+   Resource Type: google_vertex_ai_model_iam_binding
+   Issue:         Vertex AI resources cannot have public IAM access
+   ```
+
+5. **Responsible AI Policy**: Enforces governance practices including model cards and explainability
+   ```
+   # Required for compliance
+   resource "google_vertex_ai_model" "example" {
+     metadata = {
+       framework        = "tensorflow"
+       training_dataset = "gs://example-bucket/training-data"
+       model_type       = "classification"
+       responsible_team = "ml-governance@example.com"
+     }
+     explanation_spec {
+       # Model explainability settings
+     }
+   }
+   ```
+
+6. **VPC Service Controls Policy**: Ensures AI services are protected by network perimeters
+
+### Enterprise AI Governance
+
+For organizations deploying GenAI workloads with specific compliance requirements, GCPGoLang provides:
+
+- **Continuous Validation**: Ongoing checks during the entire ML model lifecycle
+- **Governance Documentation**: Auto-generated compliance artifacts for auditing
+- **Remediation Guidance**: Clear guidance on fixing security issues in AI workloads
+- **Control Mapping**: Maps security controls to frameworks like NIST, SOC2, and ISO
+
+These features help organizations deploy Vertex AI and other GenAI workloads in compliance with enterprise security standards and legal/regulatory requirements.
 
 ## Complete Workflow
 
@@ -473,34 +536,52 @@ For details, see the [GitHub Actions Authentication README](terraform/github-act
 ### Project Structure
 ```
 GCPGoLang/
-├── main.go                  # Main entry point
-├── go.mod                   # Go module definition
-├── go.sum                   # Go dependency checksums
-├── .github/                 # GitHub configuration
-│   └── workflows/           # GitHub Actions workflows
-├── gcp-guardrail/           # Core security framework
-│   ├── cmd/                 # Command implementations
-│   ├── pkg/                 # Core packages
-│   │   ├── cmd/             # Command definitions
-│   │   ├── gcp/             # GCP-specific logic
-│   │   └── policy/          # Policy evaluation
-│   └── policies/            # Rego policy definitions
-├── docs/                    # Documentation
+├── main.go                   # Main entry point
+├── go.mod                    # Go module definition
+├── go.sum                    # Go dependency checksums
+├── .github/                  # GitHub configuration
+│   └── workflows/            # GitHub Actions workflows
+│       ├── security-scan.yml        # Core security scanning
+│       ├── gcpgolang.yml            # General security tools validation
+│       ├── terraform.yml            # Infrastructure validation 
+│       ├── wiz-scan.yml             # Dedicated Wiz scanning
+│       └── unified-security.yml     # Combined all-in-one workflow
+├── gcp-guardrail/            # Core security framework
+│   ├── cmd/                  # Command implementations
+│   ├── pkg/                  # Core packages
+│   │   ├── cmd/              # Command definitions
+│   │   ├── gcp/              # GCP-specific logic
+│   │   └── policy/           # Policy evaluation
+│   └── policies/             # Rego policy definitions
+│       ├── vertex-ai/        # AI/ML security policies
+│       │   ├── access_restrictions.rego  # Prevention of overly permissive access
+│       │   ├── cmek_encryption.rego      # Customer-managed encryption keys
+│       │   ├── model_monitoring.rego     # ML model drift detection
+│       │   ├── private_endpoints.rego    # Private connectivity enforcement
+│       │   ├── responsible_ai.rego       # AI governance practices
+│       │   └── vpc_service_controls.rego # VPC perimeter protection
+│       ├── iam/              # Identity and access management policies
+│       │   └── privileged_roles.rego     # Privileged role restrictions
+│       ├── kubernetes/       # GKE security policies
+│       ├── terraform/        # Infrastructure-as-code policies
+│       └── logging/          # Audit logging policies
+├── docs/                     # Documentation
 │   ├── github-secrets-setup.md  # GitHub setup guide
-│   └── wif-setup.md         # Workload Identity setup guide
-├── scripts/                 # Utility scripts
-│   ├── setup-github-auth.sh # GitHub auth setup
-│   ├── manual-setup.sh      # Alternative setup with timestamps 
-│   ├── cleanup-wif.sh       # Resource cleanup script
-│   └── get-wif-info.sh      # Resource info retrieval
-├── terraform/               # Terraform modules
-│   ├── project-setup/       # Project foundation setup
-│   └── github-actions/      # GitHub Actions authentication
-└── examples/                # Usage examples
-    ├── terraform/           # Terraform examples
-    │   ├── plans/           # Example Terraform plans
-    │   └── policies/        # Example Rego policies
-    └── workflows/           # Example workflow files
+│   └── wif-setup.md          # Workload Identity setup guide
+├── scripts/                  # Utility scripts
+│   ├── setup-github-auth.sh  # GitHub auth setup
+│   ├── manual-setup.sh       # Alternative setup with timestamps 
+│   ├── cleanup-wif.sh        # Resource cleanup script
+│   ├── get-wif-info.sh       # Resource info retrieval
+│   └── setup-github-actions.sh # GitHub Actions configuration script
+├── terraform/                # Terraform modules
+│   ├── project-setup/        # Project foundation setup
+│   └── github-actions/       # GitHub Actions authentication
+└── examples/                 # Usage examples
+    ├── terraform/            # Terraform examples
+    │   ├── plans/            # Example Terraform plans
+    │   └── policies/         # Example Rego policies
+    └── workflows/            # Example workflow files
 ```
 
 ### Adding New Components

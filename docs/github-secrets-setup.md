@@ -10,7 +10,51 @@ You need to add the following secrets to your GitHub repository:
 2. **`SERVICE_ACCOUNT`**: The service account email address
 3. **`GCP_PROJECT_ID`**: Your GCP project ID
 
-## First-Time Setup
+## Setup Options
+
+There are three ways to set up GitHub Actions authentication with GCP:
+
+### Option 1: Using Terraform (Recommended)
+
+The most maintainable approach is to use the provided Terraform module:
+
+```bash
+cd terraform/github-actions
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your project details
+terraform init
+terraform apply
+```
+
+The Terraform output will provide all values needed for GitHub secrets.
+
+### Option 2: Using the Setup Script
+
+For a guided setup experience with interactive prompts:
+
+```bash
+./scripts/setup-github-auth.sh
+```
+
+Or with custom parameters:
+
+```bash
+./scripts/setup-github-auth.sh --project-id=your-project-id --github-org=your-github-username
+```
+
+### Option 3: Manual Setup with Timestamp-Based Resources
+
+If you need unique resource names to avoid conflicts:
+
+```bash
+./scripts/manual-setup.sh
+```
+
+This script automatically generates resources with timestamp-based names.
+
+## Manual Setup Process
+
+If you prefer to understand the individual steps or need to customize the process, here's a detailed breakdown:
 
 ### 1. Create and Configure the Workload Identity Pool and Provider
 
@@ -91,33 +135,52 @@ gcloud iam service-accounts add-iam-policy-binding "${SERVICE_ACCOUNT_EMAIL}" \
 echo "Service Account Email: ${SERVICE_ACCOUNT_EMAIL}"
 ```
 
-### 3. Add Secrets to GitHub
+## Adding Secrets to GitHub
 
 1. Go to your GitHub repository
 2. Navigate to Settings → Secrets and variables → Actions
 3. Click "New repository secret" and add each of the following:
 
    - **Name**: `WIF_PROVIDER`  
-     **Value**: (The Workload Identity Provider resource name from step 1)
+     **Value**: (The Workload Identity Provider resource name from setup)
 
    - **Name**: `SERVICE_ACCOUNT`  
-     **Value**: (The service account email from step 2)
+     **Value**: (The service account email from setup)
      
    - **Name**: `GCP_PROJECT_ID`  
-     **Value**: `gcpgolang`
+     **Value**: Your GCP project ID
+
+## Troubleshooting
+
+If you encounter issues with your setup:
+
+1. **Check current configuration**: 
+   ```bash
+   ./scripts/get-wif-info.sh
+   ```
+
+2. **Clean up existing resources**:
+   ```bash
+   ./scripts/cleanup-wif.sh
+   ```
+
+3. **Create a new setup with unique names**:
+   ```bash
+   ./scripts/manual-setup.sh
+   ```
 
 ## Verifying the Setup
 
 After adding the secrets, trigger the workflow manually to verify everything works:
 
 1. Go to the Actions tab in your repository
-2. Select "Terraform Infrastructure Management"
+2. Select the workflow you want to run (e.g., "Unified Security Workflow")
 3. Click "Run workflow"
-4. Choose the branch and environment
+4. Choose the branch and any other parameters
 5. Click "Run workflow"
 
 The workflow should now authenticate successfully to GCP using Workload Identity Federation.
 
 ## Bootstrapping Consideration
 
-Once this initial setup is complete, future changes to the Workload Identity Pool, Provider, and Service Account can be managed through Terraform using the CI/CD pipeline. 
+Once this initial setup is complete, future changes to the Workload Identity Pool, Provider, and Service Account can be managed through Terraform using the CI/CD pipeline.
