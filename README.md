@@ -122,25 +122,88 @@ GCPGoLang integrates with GitHub Actions for continuous security monitoring of y
 - **PR Integration**: Adds security findings as comments on pull requests
 - **Audit History**: Maintains a record of security posture over time
 
-### Setup
+### Enterprise-Grade Authentication with Workload Identity Federation
 
-1. Copy the workflow file to your repository:
+GCPGoLang uses Google Cloud's Workload Identity Federation for secure, key-less authentication from GitHub Actions. This approach follows cloud security best practices by:
+
+1. **Eliminating service account keys**: No long-lived credentials to manage or risk exposing
+2. **Using short-lived tokens**: Temporary OAuth tokens with limited scope and lifetime
+3. **Fine-grained access control**: Precise permission boundaries for GitHub workflows
+4. **Complete audit trail**: Every authentication and action is logged for security analysis
+5. **Monitoring & alerting**: Suspicious activity detection with automated notifications
+
+### Setup Using Terraform (Recommended)
+
+We provide a complete Terraform configuration to set up Workload Identity Federation with proper RBAC and monitoring:
+
+1. Navigate to the Terraform directory:
    ```bash
-   mkdir -p .github/workflows
-   cp examples/workflows/gcpgolang.yml .github/workflows/
+   cd terraform/github-actions
    ```
 
-2. Set up GCP authentication using the provided script:
+2. Copy and customize the variables file:
    ```bash
-   ./scripts/setup-github-actions.sh YOUR_PROJECT_ID
+   cp terraform.tfvars.example terraform.tfvars
+   # Edit terraform.tfvars with your project details
    ```
 
-3. Add the required secrets to your GitHub repository:
+3. Apply the Terraform configuration:
+   ```bash
+   terraform init
+   terraform apply
+   ```
+
+4. Add the required secrets to your GitHub repository:
+   - `WIF_PROVIDER`: Output from terraform (workload_identity_provider)
+   - `SERVICE_ACCOUNT`: Output from terraform (service_account_email)
    - `GCP_PROJECT_ID`: Your Google Cloud project ID
-   - `WIF_PROVIDER`: The Workload Identity Federation provider URL
-   - `SERVICE_ACCOUNT`: The service account email address
 
-For detailed instructions, see [GitHub Actions Integration](docs/github-actions-integration.md).
+For detailed instructions, see the [Workload Identity Federation README](terraform/github-actions/README.md).
+
+### Manual Setup (Alternative)
+
+If you prefer to set up Workload Identity Federation manually:
+
+1. Create a Workload Identity Pool:
+   ```bash
+   gcloud iam workload-identity-pools create "github-actions-pool" \
+     --project="YOUR_PROJECT_ID" \
+     --location="global" \
+     --display-name="GitHub Actions Pool"
+   ```
+
+2. Create a Workload Identity Provider:
+   ```bash
+   gcloud iam workload-identity-pools providers create-oidc "github-provider" \
+     --project="YOUR_PROJECT_ID" \
+     --location="global" \
+     --workload-identity-pool="github-actions-pool" \
+     --display-name="GitHub Actions Provider" \
+     --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" \
+     --issuer-uri="https://token.actions.githubusercontent.com"
+   ```
+
+3. Create a service account and grant it permissions:
+   ```bash
+   gcloud iam service-accounts create "github-actions-sa" \
+     --project="YOUR_PROJECT_ID"
+   
+   # Grant needed permissions (example)
+   gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+     --member="serviceAccount:github-actions-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+     --role="roles/iam.securityReviewer"
+   ```
+
+4. Allow the GitHub identity to impersonate the service account:
+   ```bash
+   gcloud iam service-accounts add-iam-policy-binding \
+     "github-actions-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+     --project="YOUR_PROJECT_ID" \
+     --role="roles/iam.workloadIdentityUser" \
+     --member="principalSet://iam.googleapis.com/projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/github-actions-pool/attribute.repository/YOUR_GITHUB_ORG/GCPGoLang"
+   ```
+
+5. Add the required secrets to your GitHub repository as described above.
 
 ## Complete Workflow
 

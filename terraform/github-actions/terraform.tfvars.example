@@ -1,0 +1,14 @@
+# GCP Project Information
+project_id     = "your-gcp-project-id"
+project_number = "your-gcp-project-number"
+
+# GitHub Repository Information
+github_org  = "your-github-username-or-org"
+github_repo = "GCPGoLang"
+
+# Optional: Notification channels for alerts
+# Find your notification channel IDs with:
+# gcloud alpha monitoring channels list --format='value(name)'
+alert_notification_channels = [
+  "projects/your-project-id/notificationChannels/1234567890"
+] 
