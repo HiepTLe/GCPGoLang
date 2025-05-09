@@ -122,7 +122,7 @@ jobs:
           for plan in ./examples/terraform/plans/*.json; do
             if [ -f "$plan" ]; then
               echo "Validating plan: $plan"
-              ./gcpgolang tf-validator --plan=$plan --output="${plan%.json}-report.json"
+              ./gcpgolang tf-validator --plan=$plan --output="${plan%.json}-report.json" --fail-threshold=4
             fi
           done
         
@@ -212,7 +212,16 @@ jobs:
             if [ -f "$report" ]; then
               plan_name=$(basename "$report" | sed 's/-report.json//')
               echo "### Plan: $plan_name" >> security-report.md
-              jq -r '.violations[] | "- " + .severity + ": " + .message' "$report" >> security-report.md
+              
+              # Extract plan info
+              jq -r '"**Plan File**: " + .plan_file + "\n**Policy Directory**: " + .policy_dir + "\n**Validation Time**: " + .timestamp' "$report" >> security-report.md
+              
+              # Create a summary table of violations
+              echo "" >> security-report.md
+              echo "| Severity | Resource | Policy Violation | Remediation |" >> security-report.md
+              echo "|----------|----------|------------------|-------------|" >> security-report.md
+              jq -r '.violations[] | "| " + .severity + " | " + .resource_type + "/" + .resource_name + " | " + .message + " | " + .remediation + " |"' "$report" >> security-report.md
+              echo "" >> security-report.md
             fi
           done
           

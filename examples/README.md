@@ -92,8 +92,36 @@ The workflow uses the Rego policies in your repository. To customize the securit
 
 1. Add or modify Rego policies in the `gcp-guardrail/policies/` directory
 2. Create test cases in the `examples/terraform/plans/` directory
-3. Test locally with `gcpgolang tf-validator --plan=your-plan.json`
+3. Test locally with `gcpgolang tf-validator --plan=your-plan.json --fail-threshold=4`
+   - Use `--fail-threshold=4` to only fail on high severity issues (levels 4-5)
+   - Lower values (1-3) will report warnings but not fail the workflow
 4. Commit and push to trigger the GitHub Actions workflow
+
+## Terraform Policy Validator
+
+The Terraform policy validator checks your infrastructure-as-code against security best practices:
+
+1. Run the validator with: `gcpgolang tf-validator --plan=your-plan.json`
+2. Configure validation severity with `--severity=2` (1=Low, 2=Medium, 3=High, 4=Critical, 5=Blocker)
+3. Control job failures with `--fail-threshold=4` (only fail on severity >= threshold)
+4. Get detailed output with policy violations, including:
+   - The specific resources affected
+   - Which policy was violated
+   - Severity of the issue
+   - Specific remediation steps to fix the problem
+
+The validator produces both console output and a structured JSON report that can be used in automation pipelines.
+
+Example output:
+```
+Violation #1:
+  Severity:      High
+  Policy:        public_bucket_access
+  Resource Type: google_storage_bucket
+  Resource Name: my-non-compliant-bucket
+  Issue:         Storage bucket does not have uniform bucket-level access enabled
+  Remediation:   Set uniform_bucket_level_access = true in the bucket configuration
+```
 
 ## Example Policy Explanation
 
