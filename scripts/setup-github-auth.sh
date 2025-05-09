@@ -97,7 +97,7 @@ if ! gcloud iam workload-identity-pools providers describe "github-provider" \
     --location="global" \
     --workload-identity-pool="github-actions-pool" \
     --display-name="GitHub Actions Provider" \
-    --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" \
+    --attribute-mapping="google.subject=assertion.sub,google.subject=assertion.repository" \
     --issuer-uri="https://token.actions.githubusercontent.com"
   echo "  ✓ Created provider 'github-provider'"
 else

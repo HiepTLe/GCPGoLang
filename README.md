@@ -7,13 +7,15 @@ A comprehensive cloud security governance toolkit for Google Cloud Platform usin
 - **Project Number:** 652769711122
 - **Project ID:** gcpgolang
 
-## Latest Updates
+## Latest Updates (May 2025)
 
 - **Enhanced Terraform Validator**: Now provides detailed policy violation information with specific remediation guidance
 - **Improved GitHub Actions Workflows**: Updated to use the latest Action versions and improved security reporting
 - **Workload Identity Federation**: Robust authentication between GitHub Actions and GCP without service account keys
 - **Severity-Based Validation**: Configurable validation thresholds to distinguish between warnings and errors
 - **Dedicated Wiz Security Scanning**: Weekly comprehensive security scanning with customizable scan types and HTML reports
+- **Conflict-Resolution Scripts**: New timestamp-based naming for WIF resources to avoid naming conflicts
+- **Troubleshooting Utilities**: Added diagnostic and cleanup scripts for easier maintenance
 
 ## Overview
 
@@ -26,6 +28,7 @@ The project follows a modular architecture with:
 - **Command Modules**: Separate packages for each functionality component
 - **Core Services**: Shared functionality for GCP API interactions
 - **Policy Engine**: Rego-based policy definitions and evaluation
+- **CI/CD Integration**: GitHub Actions workflows for continuous security validation
 
 ## Components
 
@@ -122,7 +125,9 @@ Features:
 gcpgolang misconfig-scanner --project=your-project-id
 
 # With Wiz integration for vulnerability data
-gcpgolang misconfig-scanner --project=your-project-id --wiz --wiz-client-id=YOUR_CLIENT_ID --wiz-client-secret=YOUR_CLIENT_SECRET
+gcpgolang misconfig-scanner --project=your-project-id --wiz \
+  --wiz-client-id=YOUR_CLIENT_ID \
+  --wiz-client-secret=YOUR_CLIENT_SECRET
 
 # Scan specific resource types
 gcpgolang misconfig-scanner --project=your-project-id --scan-type=storage
@@ -152,6 +157,13 @@ GCPGoLang integrates with GitHub Actions for continuous security monitoring of y
 - **PR Integration**: Adds security findings as comments on pull requests
 - **Audit History**: Maintains a record of security posture over time
 - **Dedicated Wiz Scanning**: Weekly deep security scans with rich HTML reports and notification capabilities
+
+### Available Workflows
+
+1. **security-scan.yml**: Complete security analysis including IAM, service accounts, and misconfigurations
+2. **terraform.yml**: Infrastructure validation with plan review and automated approval
+3. **gcpgolang.yml**: General security tools validation and testing
+4. **wiz-scan.yml**: Deep security scanning with Wiz integration and rich reporting
 
 ### Enterprise-Grade Authentication with Workload Identity Federation
 
@@ -195,7 +207,12 @@ For detailed instructions, see the [Workload Identity Federation README](terrafo
 
 If you prefer to set up Workload Identity Federation manually:
 
-1. Create a Workload Identity Pool with a timestamp to avoid naming conflicts:
+1. Use our automated script with customizable parameters:
+   ```bash
+   ./scripts/setup-github-auth.sh --project-id=YOUR_PROJECT_ID --project-number=YOUR_PROJECT_NUMBER --github-org=YOUR_GITHUB_ORG --github-repo=GCPGoLang
+   ```
+
+2. Or create a Workload Identity Pool with a timestamp to avoid naming conflicts:
    ```bash
    TIMESTAMP=$(date +%m%d%H%M)
    gcloud iam workload-identity-pools create "github-pool-${TIMESTAMP}" \
@@ -204,7 +221,7 @@ If you prefer to set up Workload Identity Federation manually:
      --display-name="GitHub Actions Pool"
    ```
 
-2. Create a Workload Identity Provider:
+3. Create a Workload Identity Provider:
    ```bash
    gcloud iam workload-identity-pools providers create-oidc "github-provider-${TIMESTAMP}" \
      --project="YOUR_PROJECT_ID" \
@@ -216,7 +233,7 @@ If you prefer to set up Workload Identity Federation manually:
      --attribute-condition="attribute.repository==\"YOUR_GITHUB_ORG/GCPGoLang\""
    ```
 
-3. Create a service account and grant it permissions:
+4. Create a service account and grant it permissions:
    ```bash
    gcloud iam service-accounts create "github-actions-sa" \
      --project="YOUR_PROJECT_ID"
@@ -227,7 +244,7 @@ If you prefer to set up Workload Identity Federation manually:
      --role="roles/iam.securityReviewer"
    ```
 
-4. Allow the GitHub identity to impersonate the service account:
+5. Allow the GitHub identity to impersonate the service account:
    ```bash
    gcloud iam service-accounts add-iam-policy-binding \
      "github-actions-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
@@ -236,7 +253,7 @@ If you prefer to set up Workload Identity Federation manually:
      --member="principalSet://iam.googleapis.com/projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool-${TIMESTAMP}/attribute.repository/YOUR_GITHUB_ORG/GCPGoLang"
    ```
 
-5. Add the required secrets to your GitHub repository as described above.
+6. Add the required secrets to your GitHub repository as described above.
 
 ### Troubleshooting WIF Setup
 
@@ -258,36 +275,6 @@ If you encounter issues with Workload Identity Federation setup:
    ```
 
 For detailed documentation, see [Workload Identity Federation Setup](docs/wif-setup.md).
-
-## Complete Workflow
-
-Here's a typical workflow for using GCPGoLang in your organization:
-
-1. **Initial Setup**:
-   - Install GCPGoLang and authenticate with GCP
-   - Configure GitHub Actions (optional)
-   - Customize Rego policies for your compliance requirements
-
-2. **Continuous Security Monitoring**:
-   - Schedule weekly IAM analysis scans
-   - Monitor service account usage patterns
-   - Watch audit logs for suspicious activity
-   - Scan for misconfigurations and vulnerabilities
-
-3. **Infrastructure Change Management**:
-   - Validate Terraform plans before deployment
-   - Block changes that violate security policies
-   - Document exceptions and remediation plans
-
-4. **Compliance Reporting**:
-   - Generate periodic security reports
-   - Track remediation progress
-   - Document compliance status for audits
-
-5. **Policy Refinement**:
-   - Update policies based on new threats
-   - Tune rules to reduce false positives
-   - Add specific checks for your environment
 
 ## Integration with Wiz
 
@@ -332,6 +319,37 @@ To run a manual scan:
 
 3. Optionally configure notification channels:
    - `SECURITY_WEBHOOK_URL`: Webhook URL for security notifications (e.g., Slack, Teams, etc.)
+
+## Complete Workflow
+
+Here's a typical workflow for using GCPGoLang in your organization:
+
+1. **Initial Setup**:
+   - Install GCPGoLang and authenticate with GCP
+   - Configure GitHub Actions with Workload Identity Federation
+   - Customize Rego policies for your compliance requirements
+
+2. **Continuous Security Monitoring**:
+   - Schedule weekly IAM analysis scans
+   - Monitor service account usage patterns
+   - Watch audit logs for suspicious activity
+   - Scan for misconfigurations and vulnerabilities
+   - Run deep Wiz security scans on a regular schedule
+
+3. **Infrastructure Change Management**:
+   - Validate Terraform plans before deployment
+   - Block changes that violate security policies
+   - Document exceptions and remediation plans
+
+4. **Compliance Reporting**:
+   - Generate periodic security reports
+   - Track remediation progress
+   - Document compliance status for audits
+
+5. **Policy Refinement**:
+   - Update policies based on new threats
+   - Tune rules to reduce false positives
+   - Add specific checks for your environment
 
 ## Getting Started
 
@@ -468,7 +486,13 @@ GCPGoLang/
 │   │   └── policy/          # Policy evaluation
 │   └── policies/            # Rego policy definitions
 ├── docs/                    # Documentation
+│   ├── github-secrets-setup.md  # GitHub setup guide
+│   └── wif-setup.md         # Workload Identity setup guide
 ├── scripts/                 # Utility scripts
+│   ├── setup-github-auth.sh # GitHub auth setup
+│   ├── manual-setup.sh      # Alternative setup with timestamps 
+│   ├── cleanup-wif.sh       # Resource cleanup script
+│   └── get-wif-info.sh      # Resource info retrieval
 ├── terraform/               # Terraform modules
 │   ├── project-setup/       # Project foundation setup
 │   └── github-actions/      # GitHub Actions authentication
