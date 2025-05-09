@@ -300,6 +300,42 @@ Run the main application to see available commands:
 ./gcpgolang --help
 ```
 
+## Project Setup with Terraform
+
+GCPGoLang provides Terraform modules to automate the setup and configuration of your Google Cloud environment following security best practices.
+
+### Project Infrastructure Setup
+
+The `terraform/project-setup` module handles the core infrastructure setup:
+
+1. **Enables Required APIs** - All necessary Google Cloud APIs are activated
+2. **Configures Security Monitoring** - Sets up audit logs and alerting
+3. **Establishes Security Foundations** - Creates resources needed for security tooling
+
+```bash
+cd terraform/project-setup
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your project details
+terraform init
+terraform apply
+```
+
+For detailed instructions, see the [Project Setup README](terraform/project-setup/README.md).
+
+### GitHub Actions Authentication
+
+The `terraform/github-actions` module configures secure authentication from GitHub Actions to Google Cloud using Workload Identity Federation:
+
+```bash
+cd terraform/github-actions
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your project details
+terraform init
+terraform apply
+```
+
+For details, see the [GitHub Actions Authentication README](terraform/github-actions/README.md).
+
 ## Development
 
 ### Project Structure
